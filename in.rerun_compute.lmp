@@ -1,0 +1,35 @@
+log rerun.log
+
+package cuda gpu/node 1 0
+#package omp 2 force/neigh
+
+read_restart cut_sic.pre_cut.restart
+
+
+# ------------------------ FORCE FIELDS ------------------------------
+
+pair_style	tersoff
+pair_coeff	* * SiC_Erhart-Albe.tersoff C Si C
+
+
+mass 1 12 #.0107 # C (g/mol)
+mass 2 28 #.0855 # Si (g/mol)
+mass 3 12 #.0107 # C (g/mol)
+balance dynamic xy 50 1.05
+fix 13 all property/atom mol
+
+compute	           s all stress/atom NULL
+compute	           k all ke/atom
+compute 	vor all voronoi/atom
+
+dump		1 all custom 500 dump.rerun.cut_sic.* id type mol x y z vx vy vz  c_k  c_s[1] c_s[2] c_s[3]  c_s[4] c_s[5] c_s[6] c_vor[1]
+
+
+label loop
+variable i loop 801
+variable j equal ($i-1)*500
+rerun dump.cutsic.$j.lammpstrj dump x y z box yes scaled no format native
+next i
+jump SELF loop
+variable i delete
+variable j delete

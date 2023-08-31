@@ -1,0 +1,155 @@
+# Input file for nanocutting of Cubic SiC with a diamond tool
+# Chris Fung, April 2013
+
+log cut_sic.log
+package cuda gpu/node 1 0
+package omp 2 force/neigh
+# ------------------------ INITIALIZATION ----------------------------
+units 		metal
+dimension	3
+boundary	s	s	p
+atom_style	atomic
+
+
+read_restart cut_sic.pre_cut.restart
+reset_timestep 0
+fix 13 all property/atom mol
+
+#dump	 0dumpCSP all custom  500 dump.cutsic.*.lammpstrj id type mol x y z vx vy vz
+run 0
+
+group gpDia type 1
+group gpCTbd  molecule  3
+group gpCTtsbd  molecule 2
+group gpCTmob molecule 1
+
+print "diamond tool created"
+#------------------------------------------------------------
+
+# define the lattice of cubic SiC (two atom types form two interpenetrating face-centered cubic lattices)
+
+
+# groups atoms
+group gpSiC type 2 3
+group gpWPbd molecule 6
+group gpWPtsbd molecule 5 
+group gpWPmob molecule 4
+
+group mobile subtract all gpCTtsbd gpWPtsbd
+
+print "Workpiece created"
+
+#-------------------------------------------------
+
+
+# define the mass of atoms
+mass 1 12 #.0107 # C (g/mol)
+mass 2 28 #.0855 # Si (g/mol)
+mass 3 12 #.0107 # C (g/mol)
+
+
+
+#lattice diamond 3.56683
+#region groove4 block  36.6678535282029 46.6678535282029 12.2226178427343 21.2226178427343 6.5 7.5
+#region groove5 block  36.6678535282029 46.6678535282029 12.2226178427343 20.2226178427343 6.0 8.0
+#region groove6 block 36.6678535282029 46.6678535282029 12.2226178427343 19.2226178427343 5.5 8.5
+#region groove7 block 36.6678535282029 46.6678535282029 12.2226178427343 18.2226178427343 5.0 9.0
+#region groove8 block 36.6678535282029 46.6678535282029 12.2226178427343 17.2226178427343 4.5 9.5
+#region groove9 block 36.6678535282029 46.6678535282029 12.2226178427343 16.2226178427343 4.0 10.0
+#region groove10 block 36.6678535282029 46.6678535282029 12.2226178427343 15.2226178427343 3.5 10.5
+#region groove11 block 36.6678535282029 46.6678535282029 12.2226178427343 14.2226178427343 3.0  11.0
+#region groove12 block 36.6678535282029 46.6678535282029 12.2226178427343 13.2226178427343 2.5 115
+
+#delete_atoms region groove4
+#delete_atoms region groove5
+#delete_atoms region groove6
+#delete_atoms region groove7
+#delete_atoms region groove8
+#delete_atoms region groove9
+#delete_atoms region groove10
+#delete_atoms region groove11
+#delete_atoms region groove12
+
+#lattice fcc 4.3596 origin 0 0 0 
+
+# ------------------------ FORCE FIELDS ------------------------------
+
+pair_style	tersoff
+pair_coeff	* * SiC_Erhart-Albe.tersoff C Si C
+
+# ------------------------- SETTINGS ---------------------------------######################################
+
+# DEFORMATION
+
+
+fix 1 gpWPall nvt temp 300.0 300.0 0.05 #iso 1.0 1.0 0.5
+fix 2 gpCTall nvt temp 300.0 300.0 0.05 #iso 1.0 1.0 0.5
+
+unfix 1
+unfix 2
+
+compute myCTtemp gpCTmob temp/partial 0 1 1
+compute myWPtemp gpWPmob temp/partial 0 1 1
+compute myCTTStemp gpCTtsbd temp
+compute myWPTStemp gpWPtsbd temp/partial 0 1 1
+#compute myCTpress gpCTmob pressure myCTtemp
+#compute myWPpress gpWPmob pressure myWPtemp
+
+timestep 0.0005 # set 1 femtosecond per step
+
+fix 1 gpWPtsbd nvt temp 300.0 300.0 0.05 #iso 1.0 1.0 0.5
+fix_modify 1 temp myWPTStemp
+fix 2 gpCTtsbd nvt temp 300.0 300.0 0.05 #iso 1.0 1.0 0.5
+fix_modify 2 temp myCTTStemp
+
+#fix 3 gpWPbd setforce 0.0 0.0 0.0 #move linear 0 0 0
+#fix 4 gpCTbd setforce 0.0 0.0 0.0 # units box sum no 
+#velocity gpCTbd set -1.0 0.0 0.0 units box
+fix 3 gpWPbd move linear 0 0 0
+fix 4 gpCTbd move linear -1.0 0 0 units box 
+
+fix 5 mobile nve
+
+fix 10 all balance 100 xy 10 1.05 out tmp.balance
+compute ke all ke/atom
+fix 12 all ave/atom 10 50 500 c_ke
+#fix 13 all property/atom mol
+
+#set group gpCTmob mol 1
+#set group gpCTtsbd mol 2
+#set group gpCTbd mol 3
+
+#set group gpWPmob mol 4
+#set group gpWPtsbd mol 5
+#set group gpWPbd mol 6
+
+thermo 	500
+thermo_style custom step c_myCTtemp c_myWPtemp press etotal fmax fnorm
+
+
+# move the tool to closer
+
+#displace_atoms gpDia move -4.8 0 0
+
+
+# Output strain and stress info to file
+# for units metal, pressure is in [bars] = 100 [kPa] = 1/10000 [GPa]
+# p2, p3, p4 are in GPa
+
+#compute atomdisp  all displace/atom
+#compute atomstres all stress/atom
+dump	 0dumpCSP all custom  500 dump.cutsic.*.lammpstrj id type mol x y z vx vy vz f_12
+  #c_atomdisp[4] c_atomstres[1] c_atomstres[2] c_atomstres[3] c_atomstres[4] c_atomstres[5] c_atomstres[6] 
+dump_modify 0dumpCSP element C Si C
+
+#write_restart cut_sic.restart.0000
+restart 10000 cut_sic.*.restart
+run	400000 # full 20 nm
+
+#run 188000
+
+
+
+######################################
+# SIMULATION DONE
+print "All done"
